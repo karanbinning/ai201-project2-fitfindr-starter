@@ -15,48 +15,47 @@ You must have at least 3 tools. The three required tools are listed — add any 
 ### Tool 1: search_listings
 
 **What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+Searches the mock listings dataset and returns matching items. Must handle the case where no matches are found.
 
 **Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `description` (str): ...
-- `size` (str): ...
-- `max_price` (float): ...
+- `description` (str): description of the listing
+- `size` (str):  size user is looking for
+- `max_price` (float): max price user would pay for the item
 
 **What it returns:**
-<!-- Describe the return value — what fields does a result contain? -->
+Retuns top 3 matches and includes all details of the listings
 
 **What happens if it fails or returns nothing:**
-<!-- What should the agent do if no listings match? -->
-
+it tells the user to try looking for something different but it doesn't call any other tool
 ---
 
 ### Tool 2: suggest_outfit
 
 **What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+Suggests outfit for the user based on their wardrobe and the item they got from their results from the function search_listings
 
 **Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `new_item` (dict): ...
-- `wardrobe` (dict): ...
+
+- `new_item` (dict): results[0] from search_listings
+- `wardrobe` (dict): current wardrobe of the user
 
 **What it returns:**
-<!-- Describe the return value -->
+Returns a full outfit description
 
 **What happens if it fails or returns nothing:**
-<!-- What should the agent do if the wardrobe is empty or no outfit can be suggested? -->
+tells user to look up a different listing if it fails. 
 
 ---
 
 ### Tool 3: create_fit_card
 
 **What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+If there is search_listings and suggest_outfit work, then a fit card is created
 
 **Input parameters:**
 <!-- List each parameter, its type, and what it represents -->
-- `outfit` (...): ...
+- `outfit` (str): the 
+- 'new_item' ()
 
 **What it returns:**
 <!-- Describe the return value -->
@@ -100,14 +99,7 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 ## Architecture
 
-<!-- Draw a diagram of your agent showing how the components connect:
-     User input → Planning Loop → Tools (search_listings, suggest_outfit, create_fit_card)
-                                                                          ↕
-                                                                   State / Session
-     Show what triggers each tool, how state flows between them, and where error paths branch off.
-     ASCII art, a Mermaid diagram (https://mermaid.js.org/syntax/flowchart.html), or an embedded
-     sketch are all fine. You'll share this diagram with an AI tool when asking it to implement
-     the planning loop and each individual tool. -->
+![FitFindr agent architecture diagram](img.png)
 
 ---
 
