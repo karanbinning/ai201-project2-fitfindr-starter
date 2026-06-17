@@ -53,15 +53,14 @@ tells user to look up a different listing if it fails.
 If there is search_listings and suggest_outfit work, then a fit card is created
 
 **Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `outfit` (str): the 
-- 'new_item' ()
+- `outfit` (str): the outfit suggestion string returned by `suggest_outfit`
+- `new_item` (dict): the listing dict for the thrifted find
 
 **What it returns:**
-<!-- Describe the return value -->
+Generates a short, shareable description of a complete outfit — the kind of thing someone would caption an Instagram post with. Must produce something different each time for different inputs.
 
 **What happens if it fails or returns nothing:**
-<!-- What should the agent do if the outfit data is incomplete? -->
+it should tell the user not enough data/info to generate a fit card
 
 ---
 
@@ -75,13 +74,13 @@ If there is search_listings and suggest_outfit work, then a fit card is created
 
 **How does your agent decide which tool to call next?**
 <!-- Describe the logic your planning loop uses. What does it look at? What conditions change its behavior? How does it know when it's done? -->
-
+search_listings is called and if it succeeds then it goes to suggest_outfit and if it succeeds then it runs create_fit card
 ---
 
 ## State Management
 
 **How does information from one tool get passed to the next?**
-<!-- Describe how your agent stores and accesses state within a session. What data is tracked? How is it passed between tool calls? -->
+All state lives in one `session` dict created by `_new_session()`. It holds `query`, `parsed`, `search_results`, `selected_item`, `wardrobe`, `outfit_suggestion`, `fit_card`, and `error`. Each step reads what it needs from the dict and writes its output back, so the output of one tool becomes the input to the next (e.g. `selected_item` from search feeds into `suggest_outfit`). The `error` field is the single signal that ends the interaction early.
 
 ---
 
@@ -91,9 +90,9 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 | Tool | Failure mode | Agent response |
 |------|-------------|----------------|
-| search_listings | No results match the query | |
-| suggest_outfit | Wardrobe is empty | |
-| create_fit_card | Outfit input is missing or incomplete | |
+| search_listings | No results match the query | Set `session["error"]` to a helpful "try a different search" message, return early, and don't call any other tool |
+| suggest_outfit | Wardrobe is empty | Fall back to general styling advice for the item instead of named-piece combinations |
+| create_fit_card | Outfit input is missing or incomplete | Return a descriptive error string; don't raise an exception |
 
 ---
 
@@ -117,8 +116,10 @@ For each tool, describe the specific failure mode you're handling and what the a
      before trusting it" is a plan. -->
 
 **Milestone 3 — Individual tool implementations:**
+I'll use Claude. For each tool I'll give it that tool's planning.md spec (inputs, return value, failure mode) plus the `tools.py` docstring, and ask it to implement the function using `load_listings()` from the data loader. I'll verify each tool against 3 test queries (including a no-match / empty-wardrobe case) before trusting it.
 
 **Milestone 4 — Planning loop and state management:**
+I'll give Claude the Planning Loop and State Management sections above plus the `run_agent` TODO in `agent.py`, and ask it to wire the loop using the `session` dict. I'll verify with the happy-path and no-results CLI tests already in `agent.py`.
 
 ---
 
@@ -129,13 +130,13 @@ Write out what a full user interaction looks like from start to finish — tool 
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
 
 **Step 1:**
-<!-- What does the agent do first? Which tool is called? With what input? -->
+The agent parses the query into `{description: "vintage graphic tee", size: None, max_price: 30.0}`, stores it in `session["parsed"]`, and calls `search_listings("vintage graphic tee", None, 30.0)`.
 
 **Step 2:**
-<!-- What happens next? What was returned from step 1? What tool is called now? -->
+`search_listings` returns the top 3 matches. The agent stores them in `session["search_results"]`, selects the top result as `session["selected_item"]`, and calls `suggest_outfit(selected_item, wardrobe)`.
 
 **Step 3:**
-<!-- Continue until the full interaction is complete -->
+`suggest_outfit` returns an outfit description (pairing the tee with the user's baggy jeans and chunky sneakers). The agent stores it in `session["outfit_suggestion"]` and calls `create_fit_card(outfit_suggestion, selected_item)`, storing the result in `session["fit_card"]`.
 
 **Final output to user:**
-<!-- What does the user actually see at the end? -->
+The user sees the found item (title, price, platform), the styled outfit suggestion, and a shareable OOTD-style caption from the fit card.

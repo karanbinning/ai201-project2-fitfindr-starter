@@ -21,6 +21,9 @@ from utils.data_loader import load_listings
 
 load_dotenv()
 
+# Default Groq-hosted model used for all LLM calls in this module.
+_MODEL = "llama-3.3-70b-versatile"
+
 
 # ── Groq client ───────────────────────────────────────────────────────────────
 
@@ -69,8 +72,50 @@ def search_listings(
 
     Before writing code, fill in the Tool 1 section of planning.md.
     """
-    # Replace this with your implementation
-    return []
+    listings = load_listings()
+
+    # Keywords to match against — lowercased, short noise words dropped.
+    stop_words = {"a", "an", "the", "for", "with", "and", "or", "of", "in", "to"}
+    keywords = [
+        word
+        for word in description.lower().split()
+        if word not in stop_words and len(word) > 1
+    ]
+
+    size_query = size.lower().strip() if size else None
+
+    matches = []
+    for listing in listings:
+        # Price filter (inclusive).
+        if max_price is not None and listing["price"] > max_price:
+            continue
+
+        # Size filter — case-insensitive substring match so "M" matches "S/M".
+        if size_query is not None and size_query not in listing["size"].lower():
+            continue
+
+        # Build a searchable text blob from the listing's text fields.
+        haystack = " ".join(
+            [
+                listing["title"],
+                listing["description"],
+                listing["category"],
+                " ".join(listing["style_tags"]),
+                " ".join(listing["colors"]),
+                listing["brand"] or "",
+            ]
+        ).lower()
+
+        # Score by how many query keywords appear in the listing.
+        score = sum(1 for word in keywords if word in haystack)
+        if score == 0:
+            continue
+
+        matches.append((score, listing))
+
+    # Sort by score, highest first.
+    matches.sort(key=lambda pair: pair[0], reverse=True)
+    return [listing for _, listing in matches]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
@@ -100,8 +145,63 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
 
     Before writing code, fill in the Tool 2 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    client = _get_groq_client()
+
+    # Describe the thrifted item the user is considering.
+    item_desc = (
+        f"{new_item['title']} — a {new_item.get('condition', '')} "
+        f"{new_item['category']} ({', '.join(new_item.get('colors', []))}; "
+        f"tags: {', '.join(new_item.get('style_tags', []))}). "
+        f"${new_item['price']} on {new_item.get('platform', 'a resale app')}."
+    )
+
+    items = wardrobe.get("items", [])
+
+    if not items:
+        # Empty wardrobe → general styling advice for the item.
+        prompt = (
+            f"A user is considering buying this thrifted item:\n{item_desc}\n\n"
+            "They haven't told us what's in their wardrobe yet. Give friendly, "
+            "general styling advice: what kinds of pieces pair well with it, what "
+            "vibe or occasion it suits, and how to dress it up or down. Suggest "
+            "1–2 example outfits using generic pieces (not specific brands)."
+        )
+    else:
+        # Format the wardrobe into named pieces the LLM can reference.
+        wardrobe_lines = []
+        for it in items:
+            note = f" ({it['notes']})" if it.get("notes") else ""
+            wardrobe_lines.append(
+                f"- {it['name']} [{it['category']}, "
+                f"{', '.join(it.get('colors', []))}]{note}"
+            )
+        wardrobe_text = "\n".join(wardrobe_lines)
+
+        prompt = (
+            f"A user is considering buying this thrifted item:\n{item_desc}\n\n"
+            f"Here is what's already in their wardrobe:\n{wardrobe_text}\n\n"
+            "Suggest 1–2 complete outfits that pair the thrifted item with "
+            "specific named pieces from their wardrobe above. Refer to the "
+            "wardrobe pieces by name, explain why each outfit works, and keep "
+            "the tone friendly and concrete."
+        )
+
+    response = client.chat.completions.create(
+        model=_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are FitFindr, a thoughtful personal stylist who helps "
+                    "people style secondhand and thrifted clothing."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.7,
+    )
+
+    return response.choices[0].message.content
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -133,5 +233,45 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
 
     Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    # Guard against a missing or whitespace-only outfit — don't crash.
+    if not outfit or not outfit.strip():
+        return (
+            "Not enough info to generate a fit card — no outfit suggestion was "
+            "provided. Try styling an outfit first, then come back."
+        )
+
+    client = _get_groq_client()
+
+    item_desc = (
+        f"{new_item['title']}, ${new_item['price']}, "
+        f"on {new_item.get('platform', 'a resale app')}"
+    )
+
+    prompt = (
+        f"Thrifted item: {item_desc}\n\n"
+        f"Outfit it's styled in:\n{outfit}\n\n"
+        "Write a short, shareable OOTD caption (2–4 sentences) for an Instagram "
+        "or TikTok post about this thrifted find. Make it sound casual and "
+        "authentic — like a real person hyping their outfit, not a product "
+        "listing. Mention the item name, its price, and the platform naturally "
+        "(once each). Capture the specific vibe of the outfit. Output only the "
+        "caption text — no quotation marks, hashtags-only lines, or labels."
+    )
+
+    response = client.chat.completions.create(
+        model=_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You write fun, authentic social-media captions for thrifted "
+                    "outfit finds."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        # High temperature so repeated calls on the same input vary.
+        temperature=1.1,
+    )
+
+    return response.choices[0].message.content
